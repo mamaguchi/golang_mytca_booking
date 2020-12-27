@@ -143,7 +143,9 @@ func getClinicDetails(userId string, userPwd string, clinicId string, district s
 
 func GetClinicDetailsHandler(w http.ResponseWriter, r *http.Request) {	
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "authorization")	
 	r.ParseForm()
+	
 	fmt.Println("[GetClinicDetailsHandler] Request Form Data Received! \n")
 	fmt.Println(r.Form)
 	
@@ -257,6 +259,7 @@ func getClinicDeptDetails(isDirty bool, isEnabled bool, userId string, userPwd s
 
 func GetClinicDeptDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")	
+	w.Header().Set("Access-Control-Allow-Headers", "authorization")	
 
 	//TODO: This line is an ad-hoc solution to remove the 
 	//      std output triggered by CORS preflighted request via http OPTIONS.
@@ -358,6 +361,7 @@ func getClinicServiceBasicDetails(userId string, userPwd string,
 
 func GetClinicServiceBasicDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")	
+	w.Header().Set("Access-Control-Allow-Headers", "authorization")	
 
 	//TODO: This line is an ad-hoc solution to remove the 
 	//      std output triggered by CORS preflighted request via http OPTIONS.
@@ -480,6 +484,7 @@ func getClinicServiceAdvDetails(isDirty bool, isEnabled bool, userId string, use
 
 func GetClinicServiceAdvDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")	
+	w.Header().Set("Access-Control-Allow-Headers", "authorization")	
 
 	//TODO: This line is an ad-hoc solution to remove the 
 	//      std output triggered by CORS preflighted request via http OPTIONS.
@@ -576,6 +581,7 @@ func addDept(uds UpsertDeptStruct) (err error) {
 
 func addDeptHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")		
+	w.Header().Set("Access-Control-Allow-Headers", "authorization")	
 	r.ParseForm()
 
 	//TODO: This line is an ad-hoc solution to remove the 
@@ -659,6 +665,7 @@ func updateDept(uds UpsertDeptStruct) (err error) {
 
 func updateDeptHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")		
+	w.Header().Set("Access-Control-Allow-Headers", "authorization")	
 	r.ParseForm()
 
 	//TODO: This line is an ad-hoc solution to remove the 
@@ -693,6 +700,80 @@ func updateDeptHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Println("Updated dept in OpenDJ directory.\nDone")	
+}
+
+func toggleDeptAvai(uds UpsertDeptStruct) (err error) {
+    l, err := ldap.DialURL("ldap://127.0.0.1:389")
+    if err != nil {
+		log.Print(err)
+		return
+    }
+    defer l.Close()
+
+	// TODO: KIV to change 'staffId' to 'userId' by changing
+	//       the LDAP object class from 'staff' to regular 'user'
+	userDN := fmt.Sprintf("staffId=%s,%s", uds.UserId, STAFF_BASE_DN)
+    err = l.Bind(userDN, uds.UserPwd)
+    if err != nil {
+		log.Print(err)
+		return
+    }
+
+	deptDN := fmt.Sprintf(DEPT_TEMPLATE_DN, uds.DeptName, uds.ClinicName,
+							uds.District, uds.State)
+    modifyReq := ldap.NewModifyRequest(
+		deptDN, 
+		nil,
+	)
+    
+	modifyReq.Replace("clinicDeptIsEnabled", []string{uds.DeptIsEnabled})	
+	
+    err = l.Modify(modifyReq)
+    if err != nil {
+		log.Print(err)
+		return
+	}
+	
+	return nil
+}
+
+func toggleDeptAvaiHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")	
+	w.Header().Set("Access-Control-Allow-Headers", "authorization")		
+	r.ParseForm()
+
+	//TODO: This line is an ad-hoc solution to remove the 
+	//      std output triggered by CORS preflighted request via http OPTIONS.
+	//      The correct solution is to add a reverse-proxy server to the
+	//      main server so that all requests are channeled to this reverse proxy
+	//      in order to overcome CORS restriction.
+	if (r.Method == "OPTIONS") { return }
+
+	fmt.Println("\n[toggleDeptAvaiHandler] Request Form Data Received!")
+	fmt.Println(r.PostForm)
+
+	for formData, _ := range r.PostForm {
+		var uds UpsertDeptStruct
+		err := json.Unmarshal([]byte(formData), &uds)
+		if err != nil {
+			log.Print(err)
+			w.WriteHeader(500)
+			fmt.Fprintf(w, "Internal server error!")
+			return
+		}
+		fmt.Printf("UpsertDeptStruct: %+v \n", uds)
+
+		err = toggleDeptAvai(uds)
+		if err != nil {
+			log.Print(err)
+			w.WriteHeader(500)
+			fmt.Fprintf(w, "Internal server error!")
+			return
+		}
+		fmt.Printf("Toggled dept availability to %s in OpenDJ directory.\nDone\n",
+			uds.DeptIsEnabled)
+		break
+	}		
 }
 
 type UpsertSvcStruct struct {
@@ -751,6 +832,7 @@ func addSvc(uss UpsertSvcStruct) (err error) {
 
 func addSvcHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")		
+	w.Header().Set("Access-Control-Allow-Headers", "authorization")	
 	r.ParseForm()
 
 	//TODO: This line is an ad-hoc solution to remove the 
@@ -826,6 +908,7 @@ func updateSvc(uss UpsertSvcStruct) (err error) {
 
 func updateSvcHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")		
+	w.Header().Set("Access-Control-Allow-Headers", "authorization")	
 	r.ParseForm()
 
 	//TODO: This line is an ad-hoc solution to remove the 
@@ -858,6 +941,79 @@ func updateSvcHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Printf("Updated %s service to %s dept in OpenDJ directory.\nDone \n",
 					uss.SvcName, uss.DeptName)
+		break
+	}
+}
+
+func toggleSvcAvai(uss UpsertSvcStruct) (err error) {
+    l, err := ldap.DialURL("ldap://127.0.0.1:389")
+    if err != nil {
+		log.Print(err)
+		return
+    }
+    defer l.Close()
+
+	// TODO: KIV to change 'staffId' to 'userId' by changing
+	//       the LDAP object class from 'staff' to regular 'user'
+	userDN := fmt.Sprintf("staffId=%s,%s", uss.UserId, STAFF_BASE_DN)
+    err = l.Bind(userDN, uss.UserPwd)
+    if err != nil {
+		log.Print(err)
+		return
+    }
+
+	svcDN := fmt.Sprintf(SERVICE_TEMPLATE_DN3, uss.SvcName, uss.DeptName, uss.ClinicId,
+							uss.District, uss.State)
+    modifyReq := ldap.NewModifyRequest(
+		svcDN, 
+		nil,
+	)
+	modifyReq.Replace("clinicServiceIsEnabled", []string{uss.SvcIsEnabled})
+	
+    err = l.Modify(modifyReq)
+    if err != nil {
+		log.Print(err)
+		return
+	}
+	
+	return nil
+}
+
+func toggleSvcAvaiHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")	
+	w.Header().Set("Access-Control-Allow-Headers", "authorization")		
+	r.ParseForm()
+
+	//TODO: This line is an ad-hoc solution to remove the 
+	//      std output triggered by CORS preflighted request via http OPTIONS.
+	//      The correct solution is to add a reverse-proxy server to the
+	//      main server so that all requests are channeled to this reverse proxy
+	//      in order to overcome CORS restriction.
+	if (r.Method == "OPTIONS") { return }
+
+	fmt.Println("\n[toggleSvcAvaiHandler] Request Form Data Received!")
+	fmt.Println(r.PostForm)
+
+	for formData, _ := range r.PostForm {
+		var uss UpsertSvcStruct
+		err := json.Unmarshal([]byte(formData), &uss)
+		if err != nil {
+			log.Print(err)
+			w.WriteHeader(500)
+			fmt.Fprintf(w, "Internal server error!")
+			return
+		}
+		fmt.Printf("UpsertSvcStruct: %+v \n", uss)
+
+		err = toggleSvcAvai(uss)
+		if err != nil {
+			log.Print(err)
+			w.WriteHeader(500)
+			fmt.Fprintf(w, "Internal server error!")
+			return
+		}
+		fmt.Printf("Toggled %s service availability to %s of %s dept in OpenDJ directory.\nDone \n",
+					uss.SvcName, uss.SvcIsEnabled, uss.DeptName)
 		break
 	}
 }
@@ -911,7 +1067,8 @@ func updateClinic(ucs UpsertClinicStruct) (err error) {
 }
 
 func updateClinicHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")		
+	w.Header().Set("Access-Control-Allow-Origin", "*")	
+	w.Header().Set("Access-Control-Allow-Headers", "authorization")		
 	r.ParseForm()
 
 	//TODO: This line is an ad-hoc solution to remove the 
@@ -947,3 +1104,4 @@ func updateClinicHandler(w http.ResponseWriter, r *http.Request) {
 		break
 	}
 }
+

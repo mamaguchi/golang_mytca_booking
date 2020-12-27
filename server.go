@@ -13,13 +13,11 @@ import (
 	"log"
 	"encoding/json"
 	"strconv"
-	// "sync"
+	"mytca/booking/db/my_mongodb"
+	"mytca/booking/db/my_ldap"
+	"mytca/booking/auth"
 )
 
-//Global Variables
-// var (
-// 	mu sync.Mutex
-// )
 
 func helloWorldPingMongodbHandler(w http.ResponseWriter, request *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -39,7 +37,7 @@ func helloWorldPingMongodbHandler(w http.ResponseWriter, request *http.Request) 
 	fmt.Fprintf(w, "Hello World, %s!", request.URL.Path[1:])
 }
 
-type Booking struct {
+type Booking2 struct {
 	State string `bson:"state" json:"state"`
 	District string `bson:"district" json:"district"`
 	Kk string `bson:"kk" json:"kk"` 
@@ -304,7 +302,7 @@ func makeBookingHandler(w http.ResponseWriter, r *http.Request) {
 func getClinicsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	clinicDirJson, err := GetClinicsDirectory()
+	clinicDirJson, err := my_ldap.GetAllClinics()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -499,7 +497,7 @@ func makeBookingHandler3(w http.ResponseWriter, r *http.Request) {
 	mytcaDB := client.Database("test")
 	bookingColl := mytcaDB.Collection("booking3")
 
-	queuesCapPerHrProjPath := "monthlyOpSchedule"
+	dailyOpScheduleProjPath := "monthlyOpSchedule"
 	queuesUsgPerHrPath := fmt.Sprintf("monthlyOpSchedule.$.queuesUsgPerDay.%s", r.PostForm["opHrIdx"][0])
 	patientIdsPath := fmt.Sprintf("monthlyOpSchedule.$.queuesPerDay.%s.patientIds", r.PostForm["opHrIdx"][0])
 	bookingReasonsPath := fmt.Sprintf("monthlyOpSchedule.$.queuesPerDay.%s.bookingReasons", r.PostForm["opHrIdx"][0])
@@ -511,7 +509,7 @@ func makeBookingHandler3(w http.ResponseWriter, r *http.Request) {
 		queueUsgIncrement := 100		
 
 		projection := bson.D{
-			{queuesCapPerHrProjPath, 
+			{dailyOpScheduleProjPath, 
 				bson.D{
 					{"$elemMatch", bson.D{{"date", r.PostForm["date"][0]}}},
 				},
@@ -616,12 +614,14 @@ func checkIfClinicSvcExistHandler(w http.ResponseWriter, r *http.Request) {
 	state := r.PostForm["state"][0]
 	
 	svcsToCheck := []string{
-		SVC_FUNDOSCOPY,
-		SVC_XRAY,
+		// SVC_FUNDOSCOPY,
+		// SVC_XRAY,
+		my_ldap.SVC_FUNDOSCOPY,
+		my_ldap.SVC_XRAY,
 	}
 	var lstOfSvcsChecked SvcExistCheck
 	for _, svc := range svcsToCheck {
-		dept := SvcToDeptMap[svc]
+		dept := my_ldap.SvcToDeptMap[svc]
 		ifSvcExist, err := checkIfSvcExist(svc, dept, clinic, district, state)
 		if err != nil {
 			log.Print(err)
@@ -842,21 +842,30 @@ func getClinicSvcQueueMetaHandler2(w http.ResponseWriter, r *http.Request) {
 func main() {
 	// USER 
 	// ====
+	// http.HandleFunc("/", helloWorldPingMongodbHandler)
+	// http.HandleFunc("/booking", getDailyOpSchedule)
+	// http.HandleFunc("/submit", submitHandler)
+	// http.HandleFunc("/allclinics", getClinicsHandler)
+	// http.HandleFunc("/checkservice", checkIfClinicSvcExistHandler)
+	// http.HandleFunc("/serviceophours", getClinicSvcMetaHandler)
+	// http.HandleFunc("/serviceophours", getClinicSvcMetaHandler2)
+	// http.HandleFunc("/servicebookings", getClinicSvcQueueMetaHandler)
+	// http.HandleFunc("/servicebookings", getClinicSvcQueueMetaHandler2)
 	// http.HandleFunc("/book", makeBookingHandler)
 	// http.HandleFunc("/book", makeBookingHandler2)
-	// http.HandleFunc("/clinicservice", getClinicSvcMetaHandler)
-	// http.HandleFunc("/clinicservicequeue", getClinicSvcQueueMetaHandler)
-	http.HandleFunc("/", helloWorldPingMongodbHandler)
-	http.HandleFunc("/booking", getDailyOpSchedule)
-	http.HandleFunc("/submit", submitHandler)
-	http.HandleFunc("/clinics", getClinicsHandler)
-	http.HandleFunc("/book", makeBookingHandler3)
-	http.HandleFunc("/clinicservice", getClinicSvcMetaHandler2)
-	http.HandleFunc("/clinicservicequeue", getClinicSvcQueueMetaHandler2)
-	http.HandleFunc("/checkservice", checkIfClinicSvcExistHandler)
+	// http.HandleFunc("/book", makeBookingHandler3)
+	http.HandleFunc("/allclinics", my_ldap.GetAllClinicsHandler)
+	http.HandleFunc("/checkservice", my_ldap.CheckIfSvcExistHandler)
+	http.HandleFunc("/serviceophours", my_ldap.GetSvcOpHrsHandler)
+	http.HandleFunc("/servicebookings", my_mongodb.GetSvcBookingsHandler)
+	http.HandleFunc("/book", my_mongodb.MakeBookingHandler)
+	http.HandleFunc("/patientbookings", my_mongodb.GetPatientBookingsHandler)
+	http.HandleFunc("/patientdelbookings", my_mongodb.DelBookingHandler)
 
 	// ADMIN
 	// =====
+	// Pkd
+	http.HandleFunc("/admin/pkdclinics", my_ldap.GetPkdClinicsHandler)
 	// Clinic
 	http.HandleFunc("/admin/clinicdetails", GetClinicDetailsHandler)
 	http.HandleFunc("/admin/updateclinic", updateClinicHandler)
@@ -864,12 +873,18 @@ func main() {
 	http.HandleFunc("/admin/clinicdeptdetails", GetClinicDeptDetailsHandler)
 	http.HandleFunc("/admin/adddept", addDeptHandler)
 	http.HandleFunc("/admin/updatedept", updateDeptHandler)
+	http.HandleFunc("/admin/toggledeptavai", toggleDeptAvaiHandler)
 	// Service
 	http.HandleFunc("/admin/clinicsvcbscdetails", GetClinicServiceBasicDetailsHandler)	
 	http.HandleFunc("/admin/clinicsvcadvdetails", GetClinicServiceAdvDetailsHandler)
 	http.HandleFunc("/admin/addsvc", addSvcHandler)
 	http.HandleFunc("/admin/updatesvc", updateSvcHandler)
+	http.HandleFunc("/admin/togglesvcavai", toggleSvcAvaiHandler)
 	
+	// AUTH
+	// ====
+	http.HandleFunc("/public/login", auth.BindHandler)
+	http.HandleFunc("/public/signup", auth.CreateAccountHandler)
 	
 	// SERVER
 	// ======
@@ -880,12 +895,14 @@ func main() {
 	// =====================
 	// InitOpSchedule3(2020, 10, "opd", "kk_maran", "maran", "pahang")
 	// InitOpSchedule4(2020, 10, "kk_maran", "maran", "pahang")
+	// InitOpSchedule5(2020, 10, "kk_maran", "maran", "pahang")
+	// my_mongodb.InitOpSchedule("880601105150", "88motherfaker88", 2020, 10, "kk_maran", "maran", "pahang")
 
 
 	// DEBUG OUTPUT 
 	// ============
 	// #DEBUG-1
-	// clinicsDirJson, err := GetClinicsDirectory()
+	// clinicsDirJson, err := GetAllClinics()
 	// if err != nil {
 	// 	log.Fatal(err)
 	// }
@@ -928,17 +945,46 @@ func main() {
 	// 	log.Fatal(err)
 	// }
 
-	// $DEBUG-8
+	// #DEBUG-8
 	// _, err := getClinicServiceAdvDetails(true, true, "880601105150", "88motherfaker88","x-ray", "x-ray", "kk_maran", "maran", "pahang")
 	// if err != nil {
 	// 	log.Fatal(err)
 	// }
 
-	// $DEBUG-9
-	_, err := getClinicServiceBasicDetails("880601105150", "88motherfaker88", "opd_disease", "kk_maran", "maran", "pahang")
-	if err != nil {
-		log.Fatal(err)
-	}
+	// #DEBUG-9
+	// _, err := getClinicServiceBasicDetails("880601105150", "88motherfaker88", "opd_disease", "kk_maran", "maran", "pahang")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 	
+	// #DEBUG-10
+	// deptDatalist, err := db.GetDeptNameAndStaffNum("880601105150", "88motherfaker88", "kk_maran", "maran", "pahang")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// fmt.Printf("deptDatalist: %+v \n", deptDatalist)
+
+	// #DEBUG-11
+	// svcOpHrs, err := my_ldap.GetSvcOpHrs("880601105150", "88motherfaker88", "diabetes", "opd_disease", "kk_maran", "maran", "pahang")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// fmt.Printf("svcOpHrs: %+v \n", svcOpHrs)
+
+	// #DEBUG-12
+	// err := my_ldap.Bind("880601105149", "88motherfaker")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// #DEBUG-13
+	// tokenString, err := auth.NewTokenHMAC("880601105149")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// fmt.Printf("tokenString: %s \n", tokenString)
+
+	// tokenValid := auth.VerifyTokenHMAC(tokenString)
+	// fmt.Printf("Is token valid: %v \n", tokenValid)
 }
 	
